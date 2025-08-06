@@ -47,6 +47,6 @@ async def auto_client():
             reply = await websocket.recv()
             print(f"Received: {reply}")
             counter += 1
-            # await asyncio.sleep(2)
+            await asyncio.sleep(2)
 
 asyncio.run(auto_client())
