@@ -6,3 +6,4 @@ edition = "2024"
 [dependencies]
 my_lib = { path = "../my_lib" }
 tokio = { version = "1.28.2", features = ["full", "fs"]}
+env_logger = { workspace = true }

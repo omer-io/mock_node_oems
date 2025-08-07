@@ -41,7 +41,7 @@ async def auto_client():
         print("Connected. Sending messages every 2 seconds...")
         counter = 0
         while True:
-            msg = f"Message {counter}"
+            msg = f"Message {counter}".encode()
             await websocket.send(msg)
             print(f"Sent: {msg}")
             reply = await websocket.recv()
