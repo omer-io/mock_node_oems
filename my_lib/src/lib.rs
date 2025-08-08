@@ -40,11 +40,11 @@ impl WebSocketServer {
 
             rt.block_on(async move {
                 let listener = TcpListener::bind(format!("{}:{}", config.websocket_ip, config.websocket_port)).await.unwrap();
-                println!("Server started, listening on {}:{}", config.websocket_ip, config.websocket_port);
+                log::info!("Server started, listening on {}:{}", config.websocket_ip, config.websocket_port);
                 loop {
                     let (stream, addr) = listener.accept().await.unwrap();
                     let client_id = Uuid::new_v4();
-                    println!("Client connected: {} (UUID: {})", addr, client_id);
+                    log::info!("Client connected: {} (UUID: {})", addr, client_id);
                     let state = state_clone.clone();
                     let send_to_app = send_to_app.clone(); 
                     tokio::spawn(async move {
@@ -56,7 +56,7 @@ impl WebSocketServer {
                             .serve_connection(io, service)
                             .with_upgrades();
                         if let Err(e) = conn_fut.await {
-                            eprintln!("An error occurred: {:?}", e);
+                            log::error!("An error occurred: {:?}", e);
                         }
                     });
                 }
@@ -67,7 +67,6 @@ impl WebSocketServer {
             state,
             recv_from_server,
         }
-        // Ok((state, recv_from_server))
 
     }
 
@@ -138,28 +137,28 @@ async fn handle_client(
                             }
                             OpCode::Text => {
                                 let text = String::from_utf8(frame.payload.to_vec()).unwrap();
-                                // println!("Received text from {}: {}", addr, text);
+                                // log::info!("Received text from {}: {}", addr, text);
                                 // // Send the message to the application layer
                                 // if let Err(e) = to_app.send((client_id, text.into_bytes())) {
-                                //     eprintln!("Failed to send message to app: {}", e);
+                                //     log::error!("Failed to send message to app: {}", e);
                                 // }
                             }
                             OpCode::Binary => {
-                                // println!("Received binary data from {}: {:?}", addr, frame.payload);
+                                // log::info!("Received binary data from {}: {:?}", addr, frame.payload);
                                 // Send the binary data to the application layer
                                 if let Err(e) = to_app.send((client_id, frame.payload.to_vec())) {
-                                    eprintln!("Failed to send binary data to app: {}", e);
+                                    log::error!("Failed to send binary data to app: {}", e);
                                 }
                             }
                             _ => {}
                         }
                     }
                     Ok(Err(e)) => {
-                        eprintln!("WebSocket error: {:?}", e);
+                        log::error!("WebSocket error: {:?}", e);
                         break;
                     }
                     Err(_) => {
-                        eprintln!("Client {} timed out due to inactivity", client_id);
+                        log::warn!("Client {} timed out due to inactivity", client_id);
                         let _ = ws.write_frame(fastwebsockets::Frame::close(1000, b"")).await;
                         break;
                     }
