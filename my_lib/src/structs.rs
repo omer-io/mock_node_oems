@@ -8,6 +8,7 @@ pub type Tx = UnboundedSender<WsMessage>;
 pub type SharedState = Arc<RwLock<State>>;
 type ClientId = Uuid;
 
+#[derive(Clone, Debug)]
 pub struct Config {
     pub websocket_ip: String,
     pub websocket_port: u16,
