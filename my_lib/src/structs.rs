@@ -5,7 +5,7 @@ use tokio::sync::{mpsc::UnboundedSender, RwLock};
 use uuid::Uuid;
 
 pub type Tx = UnboundedSender<WsMessage>;
-pub type SharedState = Arc<RwLock<State>>;
+// pub type SharedState = Arc<RwLock<State>>;
 type ClientId = Uuid;
 
 #[derive(Clone, Debug)]
@@ -18,9 +18,9 @@ pub struct Config {
     pub max_missed_pings_before_disconnect: u64
 }
 
-pub struct State {
-    pub clients: HashMap<ClientId, Tx>,
-}
+// pub struct State {
+//     pub clients: HashMap<ClientId, Tx>,
+// }
 
 #[derive(Clone, Debug)]
 #[allow(dead_code)]

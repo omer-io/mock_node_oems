@@ -15,5 +15,6 @@ hyper = { version = "1", features = [
     "client",
 ]}
 crossbeam-channel = "0.5.15"
+dashmap = "5"
 log = { workspace = true }
 env_logger = { workspace = true }

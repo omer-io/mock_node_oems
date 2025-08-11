@@ -18,17 +18,13 @@ fn main() {
 
     loop {
         match ws.recv_from_server.recv() {
-            Ok((client_id, msg)) => {
-                println!("App: Received message from client {}: {:?}", client_id, msg);
+            Ok((client_id, payload)) => {
+                println!("App: Received message from client {}: {:?}", client_id, payload);
                 let msg = my_lib::structs::WsMessage::Binary("hello from app".to_string().into_bytes());
                 let msg_string = my_lib::structs::WsMessage::Text("hello from app".to_string());
-                println!("App: Sending message to client {}: {:?}", client_id, msg_string);
-                ws.send_to_client(client_id, msg);
+                let _ = ws.send_to_server.send((client_id, msg_string));
             }
-            Err(_) => {
-                println!("breaking loop, channel closed");
-                break
-            } // Channel closed
+            Err(_) => break,
         }
     }
 }
