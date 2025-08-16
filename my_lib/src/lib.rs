@@ -1,6 +1,6 @@
 use {
     std::{collections::HashMap, sync::Arc, net::SocketAddr},
-    fastwebsockets::{upgrade, OpCode, WebSocketError, FragmentCollector},
+    fastwebsockets::{upgrade, OpCode, WebSocketError, FragmentCollector, Frame},
     tokio::{net::TcpListener, sync::{RwLock, mpsc}},
     crossbeam_channel::{unbounded, Sender, Receiver},
     http_body_util::Empty,
@@ -11,30 +11,32 @@ use {
     dashmap::DashMap,
 };
 
-pub mod structs;
-
-type ClientId = Uuid;
+pub type ClientId = Uuid;
 // pub type SharedClients = Arc<DashMap<ClientId, mpsc::Sender<structs::WsMessage>>>;
-pub type SharedClients = Arc<DashMap<ClientId, mpsc::UnboundedSender<structs::WsMessage>>>;
+pub type SharedClients = Arc<DashMap<ClientId, mpsc::UnboundedSender<WsMessage>>>;
 
 type TxToApp = Sender<(ClientId, Vec<u8>)>;
 type RxFromServer = Receiver<(ClientId, Vec<u8>)>;
-type TxToServer = mpsc::UnboundedSender<(ClientId, structs::WsMessage)>;
+type TxToServer = mpsc::UnboundedSender<(ClientId, WsMessage)>;
 
 pub struct WebSocketServer {
     pub clients: SharedClients,
     pub recv_from_server: RxFromServer,
     pub send_to_server: TxToServer,
+    // connections_per_ip: Arc<DashMap<String, u64>>, // Track connections per IP
 }
 
 impl WebSocketServer {
-    pub fn start_server(config: structs::Config) -> Self {
+    pub fn start_server(config: Config) -> Self {
 
         let (send_to_app, recv_from_server) = unbounded::<(ClientId, Vec<u8>)>();
-        let (send_to_server, mut recv_from_app) = mpsc::unbounded_channel::<(ClientId, structs::WsMessage)>();
+        let (send_to_server, mut recv_from_app) = mpsc::unbounded_channel::<(ClientId, WsMessage)>();
 
         let clients: SharedClients = Arc::new(DashMap::new());
         let clients_clone_for_runtime = clients.clone();
+
+        // let connections_per_ip = Arc::new(DashMap::new());
+        // let connections_per_ip_clone = connections_per_ip.clone();
 
         std::thread::spawn(move || {
             let rt = tokio::runtime::Builder::new_current_thread()
@@ -64,6 +66,16 @@ impl WebSocketServer {
                 loop {
                     let (stream, addr) = listener.accept().await.unwrap();
                     let client_id = Uuid::new_v4();
+                    // let ip = addr.ip().to_string();
+
+                    // // Enforce connection limit per IP
+                    // let mut connections = connections_per_ip_clone.entry(ip.clone()).or_insert(1);
+                    // if *connections >= config.max_connections_per_ip {
+                    //     log::warn!("Connection limit reached for IP: {}", ip);
+                    //     continue;
+                    // }
+                    // *connections += 1;
+
                     println!("Client connected: {} (UUID: {})", addr, client_id);
                     let clients_clone = clients_clone_for_runtime.clone();
                     let send_to_app = send_to_app.clone(); 
@@ -88,24 +100,9 @@ impl WebSocketServer {
             clients,
             recv_from_server,
             send_to_server,
+            // connections_per_ip,
         }
-
     }
-
-    // pub fn send_to_client(&mut self, client_id: ClientId, data: structs::WsMessage) {
-    //     let rt = tokio::runtime::Runtime::new().unwrap();
-    //     rt.block_on(async {
-    //         let state_read = self.state.read().await;
-    //         if let Some(sender) = state_read.clients.get(&client_id) {
-    //             println!("App: Sending message to client {}: {:?}", client_id, data);
-    //             if let Err(e) = sender.send(data) {
-    //                 println!("App: Failed to send message to client {}: {:?}", client_id, e);
-    //             }
-    //         } else {
-    //             eprintln!("Client not found: {}", client_id);
-    //         }
-    //     });
-    // }
 }
 
 async fn server_upgrade(
@@ -137,16 +134,10 @@ async fn handle_client(
     client_id: ClientId, 
     clients: &SharedClients,
     to_app: TxToApp,
-    mut rx: mpsc::UnboundedReceiver<structs::WsMessage>,
+    mut rx: mpsc::UnboundedReceiver<WsMessage>,
     ping_interval_secs: u64,
     max_missed_pings_before_disconnect: u64,
 ) -> Result<(), WebSocketError> {
-    // let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
-    // {
-    //     let mut state = state.write().await;
-    //     state.clients.insert(client_id, tx);
-    // }
-
     let heartbeat_timeout = Duration::from_secs(ping_interval_secs * max_missed_pings_before_disconnect);
     loop {
         tokio::select! {
@@ -167,7 +158,7 @@ async fn handle_client(
                                 }
                             }
                             OpCode::Binary => {
-                                // println!("Received binary data from {}: {:?}", addr, frame.payload);
+                                println!("Received binary data from {}: {:?}", client_id, frame.payload);
                                 // Send the binary data to the application layer
                                 if let Err(e) = to_app.send((client_id, frame.payload.to_vec())) {
                                     eprintln!("Failed to send binary data to app: {}", e);
@@ -198,4 +189,39 @@ async fn handle_client(
         }
     }
     Ok(())
+}
+
+#[derive(Clone, Debug)]
+pub struct Config {
+    pub websocket_ip: String,
+    pub websocket_port: u16,
+    pub ping_interval_secs: u64,
+    pub requests_per_second: u64,
+    pub max_connections_per_ip: u64,
+    pub max_missed_pings_before_disconnect: u64
+}
+
+
+#[derive(Clone, Debug)]
+#[allow(dead_code)]
+pub enum WsMessage {
+    Text(String),
+    Binary(Vec<u8>),
+    /// Send a pong message with the given data.
+    Pong(Vec<u8>),
+    /// Close the connection with the given code and reason.
+    /// u16 is the status code
+    /// String is the reason
+    Close(u16, String),
+}
+
+impl WsMessage {
+    pub fn to_frame(&self) -> Frame {
+        match self {
+            WsMessage::Text(text) => Frame::text(text.as_bytes().into()),
+            WsMessage::Binary(data) => Frame::binary(data.as_slice().into()),
+            WsMessage::Pong(data) => Frame::pong(data.as_slice().into()),
+            WsMessage::Close(code, reason) => Frame::close(*code, reason.as_bytes()),
+        }
+    }
 }
